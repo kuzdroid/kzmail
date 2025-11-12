@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>KZMail • Tek Dosya (LocalStorage)</title>
+  <style>
+    :root{--bg:#0b0c10;--card:#11131a;--text:#e8eaed;--muted:#a3a7b0;--primary:#4f8cff;--accent:#64d2ff;--danger:#ff5c74;--border:#212532}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--text)}
+    .header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--card);border-bottom:1px solid var(--border)}
+    .container{max-width:1100px;margin:18px auto;padding:0 16px;display:grid;grid-template-columns:1fr 360px;gap:12px}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px}
+    input,textarea,button{font-size:14px}
+    input,textarea{width:100%;padding:8px;border-radius:8px;border:1px solid var(--border);background:#0e1016;color:var(--text);outline:none}
+    button{padding:8px 10px;border-radius:8px;border:none;cursor:pointer}
+    .btn-primary{background:var(--primary);color:#fff}
+    .btn-danger{background:var(--danger);color:#fff}
+    .small{font-size:12px;color:var(--muted)}
+    .list{display:flex;flex-direction:column;gap:8px;max-height:60vh;overflow:auto}
+    .mail{border:1px solid var(--border);border-radius:10px;padding:10px}
+    .mail .meta{display:flex;justify-content:space-between;align-items:center}
+    .row{display:flex;gap:8px;align-items:center}
+    .field-inline{flex:1}
+    .badge{display:inline-block;padding:2px 6px;border-radius:6px;background:#223;color:#9fdf;font-size:11px;margin-left:8px}
+    .tabs{display:flex;gap:8px;margin-bottom:8px}
+    .tabs button{background:#18202a}
+    .tabs button.active{background:var(--primary);color:#fff}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div style="font-weight:800">KZMail</div>
+    <div class="small">@kuziler.tr • Tek dosya demo (LocalStorage)</div>
+  </div>
+
+  <main class="container">
+    <section class="card">
+      <div class="tabs">
+        <button id="tabInbox" class="active">Gelen</button>
+        <button id="tabSent">Gönderilen</button>
+        <div class="field-inline"></div>
+        <input id="q" placeholder="Ara (konu veya içerik)" style="max-width:260px">
+        <button id="btnSearch">Ara</button>
+      </div>
+      <div id="list" class="list"></div>
+      <div id="empty" class="small" style="display:none">Kayıt yok.</div>
+    </section>
+
+    <aside class="card">
+      <div id="auth">
+        <h3>Giriş / Kayıt</h3>
+        <div class="row"><input id="u" placeholder="kullanıcı adı"><input id="p" type="password" placeholder="şifre"></div>
+        <div class="row" style="margin-top:8px"><button id="btnLogin" class="btn-primary">Giriş</button><button id="btnReg">Kayıt Ol</button></div>
+        <div class="small" style="margin-top:6px">E-posta adresin: <b id="me">—</b></div>
+      </div>
+      <hr/>
+      <div id="composer" style="display:none">
+        <h4>Yeni Mail</h4>
+        <input id="to" placeholder="alıcı (kullanıcı adı)">
+        <input id="subj" placeholder="Konu">
+        <textarea id="body" rows="6" placeholder="Mesaj"></textarea>
+        <div class="row" style="margin-top:8px">
+          <button id="btnSend" class="btn-primary">Gönder</button>
+          <button id="btnLogout" class="btn-danger" style="margin-left:auto">Çıkış</button>
+        </div>
+        <div class="small" style="margin-top:8px">Adres biçimi: <b>kullaniciadi@kuziler.tr</b></div>
+      </div>
+    </aside>
+  </main>
+
+  <script>
+  // === Basit KZMail (LocalStorage) ===
+  const DOMAIN = 'kuziler.tr';
+  const STORE_KEY = 'KZMail.data';
+  const $ = id => document.getElementById(id);
+
+  let STATE = { me:null, tab:'inbox' }; // me:{user,email}
+  let DATA = load();
+
+  function load(){
+    try{
+      const raw = localStorage.getItem(STORE_KEY);
+      if(!raw) return { users:{}, mails:[] };
+      const d = JSON.parse(raw);
+      d.users ||= {}; d.mails ||= [];
+      return d;
+    }catch{ return { users:{}, mails:[] }; }
+  }
+  function save(){ localStorage.setItem(STORE_KEY, JSON.stringify(DATA)); }
+
+  function emailOf(u){ return `${String(u).toLowerCase()}@${DOMAIN}`; }
+  function escapeHtml(s=''){ return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
+
+  // ---- Auth ----
+  $('btnReg').onclick = ()=>{
+    const u=$('u').value.trim().toLowerCase();
+    const p=$('p').value;
+    if(!u||!p) return alert('Kullanıcı ve şifre gerekli');
+    if(DATA.users[emailOf(u)]) return alert('Bu kullanıcı zaten var');
+    if(!/^([a-z0-9]+[._-]?)*[a-z0-9]+$/.test(u)) return alert('Geçersiz kullanıcı adı');
+    DATA.users[emailOf(u)] = { pass:p, createdAt:Date.now() };
+    save();
+    alert('Kayıt tamam: '+emailOf(u));
+  };
+
+  $('btnLogin').onclick = ()=>{
+    const u=$('u').value.trim().toLowerCase();
+    const p=$('p').value;
+    if(!u||!p) return alert('Kullanıcı ve şifre gerekli');
+    const email = emailOf(u);
+    const rec = DATA.users[email];
+    if(!rec || rec.pass!==p) return alert('Geçersiz kullanıcı / şifre');
+    STATE.me = { user:u, email };
+    $('me').textContent = email;
+    $('composer').style.display='block';
+    render();
+  };
+
+  $('btnLogout').onclick = ()=>{
+    STATE.me=null; $('me').textContent='—';
+    $('composer').style.display='none';
+    render();
+  };
+
+  // ---- Tabs ----
+  $('tabInbox').onclick = ()=>{ STATE.tab='inbox'; render(); };
+  $('tabSent').onclick = ()=>{ STATE.tab='sent'; render(); };
+  $('btnSearch').onclick = ()=> render();
+
+  // ---- Send ----
+  $('btnSend').onclick = ()=>{
+    if(!STATE.me) return alert('Önce giriş yapın');
+    const toUser = $('to').value.trim().toLowerCase();
+    const subject = $('subj').value.trim();
+    const body = $('body').value.trim();
+    if(!toUser||!subject||!body) return alert('Tüm alanları doldurun');
+    const toEmail = emailOf(toUser);
+    if(!DATA.users[toEmail]) return alert('Alıcı bulunamadı: '+toEmail);
+
+    const mail = {
+      id: Date.now().toString(36)+Math.random().toString(36).slice(2,8),
+      sender_email: STATE.me.email,
+      recipient_email: toEmail,
+      subject, body,
+      created_at: Date.now(),
+      is_read: false,
+      deleted_by_sender:false,
+      deleted_by_recipient:false
+    };
+    DATA.mails.push(mail);
+    save();
+    $('subj').value=''; $('body').value='';
+    alert('Gönderildi');
+    if(STATE.tab==='sent') render();
+  };
+
+  // ---- Render list ----
+  function render(){
+    // tabs ui
+    $('tabInbox').classList.toggle('active', STATE.tab==='inbox');
+    $('tabSent').classList.toggle('active', STATE.tab==='sent');
+
+    const list = $('list');
+    list.innerHTML='';
+    const q = $('q').value.trim().toLowerCase();
+    let items = [];
+
+    if(STATE.me){
+      if(STATE.tab==='inbox'){
+        items = DATA.mails.filter(m=> m.recipient_email===STATE.me.email && !m.deleted_by_recipient);
+      }else{
+        items = DATA.mails.filter(m=> m.sender_email===STATE.me.email && !m.deleted_by_sender);
+      }
+      // search
+      if(q){ items = items.filter(m=> String(m.subject).toLowerCase().includes(q) || String(m.body).toLowerCase().includes(q)); }
+      // sort
+      items.sort((a,b)=>(b.created_at||0)-(a.created_at||0));
+    }
+
+    $('empty').style.display = (!STATE.me || items.length===0)?'block':'none';
+
+    for(const m of items){
+      const d = document.createElement('div');
+      d.className='mail';
+      const who = STATE.tab==='sent' ? m.recipient_email : m.sender_email;
+      d.innerHTML = `
+        <div class="meta">
+          <div><b>${escapeHtml(who)}</b>${(!m.is_read && STATE.tab==='inbox')?'<span class="badge">yeni</span>':''}</div>
+          <div class="small">${new Date(m.created_at).toLocaleString()}</div>
+        </div>
+        <div><b>${escapeHtml(m.subject||'')}</b></div>
+        <div class="small" style="white-space:pre-wrap">${escapeHtml(m.body||'')}</div>
+        <div class="row" style="margin-top:8px">
+          ${STATE.tab==='inbox'?'<button class="btnMark">Okundu</button>':''}
+          <button class="btnDel">Sil</button>
+        </div>
+      `;
+      // events
+      if(STATE.tab==='inbox'){
+        d.querySelector('.btnMark')?.addEventListener('click',()=>{
+          m.is_read = true; save(); render();
+        });
+      }
+      d.querySelector('.btnDel').addEventListener('click',()=>{
+        if(STATE.tab==='inbox') m.deleted_by_recipient = true; else m.deleted_by_sender = true;
+        save(); render();
+      });
+      list.appendChild(d);
+    }
+  }
+
+  // --- Seed örnek kullanıcılar (ilk açılışta yoksa) ---
+  (function seed(){
+    if(Object.keys(DATA.users).length===0){
+      const users = ['mr.selim','elalye','sena','kursatomer'];
+      for(const u of users){ DATA.users[emailOf(u)] = { pass:'kuziler', createdAt:Date.now() }; }
+      save();
+    }
+    render();
+  })();
+
+  </script>
+</body>
+</html>
